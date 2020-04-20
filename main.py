@@ -103,5 +103,5 @@ if __name__ == '__main__':
     load_dotenv()
     secret_key = os.getenv('SECRET_KEY')
     dict_to_table(fetch_hh_data(), 'HeadHunter Moscow')
-    dict_to_table(fetch_sj_data(), 'SuperJobs Moscow')
+    dict_to_table(fetch_sj_data(), 'SuperJob Moscow')
 
