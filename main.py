@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 from itertools import count
 from terminaltables import SingleTable
+from statistics import mean
 
 
 HH_URL = "https://api.hh.ru/vacancies"
@@ -21,10 +22,10 @@ def predict_rub_salary_sj(vacancy):
     return predict_salary(vacancy['payment_from'], vacancy['payment_to'])
 
 
-def predict_rub_salary_hh(salary_dict):
-    if salary_dict['currency'] != 'RUR':
+def predict_rub_salary_hh(salary):
+    if salary['currency'] != 'RUR':
         return None
-    return predict_salary(salary_dict['from'], salary_dict['to'])
+    return predict_salary(salary['from'], salary['to'])
 
 
 def predict_salary(salary_from, salary_to):
@@ -38,69 +39,68 @@ def predict_salary(salary_from, salary_to):
         return None
 
 
-def create_table_from_salary_dict(language_statistic_dict, table_title):
-    table_data = [TABLE_HEADER]
-    for lang, statistic in language_statistic_dict.items():
+def convert_vacancies_statistic_to_table(vacancies_statistic, table_title):
+    table = [TABLE_HEADER]
+    for lang, statistic in vacancies_statistic.items():
         table_row = (lang, statistic['vacancies_found'], statistic['vacancies_processed'], statistic['average_salary'])
-        table_data.append(table_row)
-    table_instance = SingleTable(table_data, table_title)
-    print(table_instance.table)
-    print()
+        table.append(table_row)
+    table_instance = SingleTable(table, table_title)
+    return table_instance.table
 
 
-def fetch_sj_salary_data():
-    languages_sj_salary_dict = {}
-    header = {"X-Api-App-Id": secret_key}
+def fetch_sj_vacancies_statistic(_secret_key):
+    vacancies_statistic = {}
+    header = {"X-Api-App-Id": _secret_key}
     for _language in LANGUAGES:
-        lang_salary_statistic = {}
-        lang_vacancies = []
+        lang_statistic = {}
+        vacancies = []
         for _page in count(0):
             _payload = {'town': SJ_TOWN, 'catalogues': CATALOG, 'page': _page, 'keyword': _language}
             response = requests.get(SJ_URL, headers=header, params=_payload)
             response.raise_for_status()
-            page_data = response.json().get('objects')
-            if page_data:
-                lang_vacancies.extend(page_data)
+            page_vacancies = response.json().get('objects')
+            if page_vacancies:
+                vacancies.extend(page_vacancies)
             else:
                 break
-        if lang_vacancies:
-            lang_salary_statistic['vacancies_found'] = len(lang_vacancies)
-            processed_salaries = list(filter(lambda x: x is not None, map(predict_rub_salary_sj, lang_vacancies)))
-            lang_salary_statistic['vacancies_processed'] = len(processed_salaries)
+        if vacancies:
+            lang_statistic['vacancies_found'] = len(vacancies)
+            processed_salaries = [salary for salary in map(predict_rub_salary_sj, vacancies) if salary]
+            lang_statistic['vacancies_processed'] = len(processed_salaries)
             if processed_salaries:
-                lang_salary_statistic['average_salary'] = int(sum(processed_salaries)/len(processed_salaries))
+                lang_statistic['average_salary'] = int(mean(processed_salaries))
             else:
-                lang_salary_statistic['average_salary'] = 0
-            languages_sj_salary_dict[_language] = lang_salary_statistic
-    return languages_sj_salary_dict
+                lang_statistic['average_salary'] = 0
+            vacancies_statistic[_language] = lang_statistic
+    return vacancies_statistic
 
 
-def fetch_hh_salary_data():
-    languages_hh_salary_dict = {}
+def fetch_hh_vacancies_statistic():
+    vacancies_statistic = {}
     for _language in LANGUAGES:
-        lang_salary_statistic = {}
+        lang_statistic = {}
         _payload = {"text": f"программист {_language}", "period": 30, "area": HH_AREA}
         response = requests.get(HH_URL, params=_payload)
         response.raise_for_status()
-        if response.json()['found'] >= 100:
-            lang_salary_statistic["vacancies_found"] = response.json()['found']
-            lang_vacancies = []
-            for page in range(response.json()['pages']):
+        response_page = response.json()
+        if response_page['found'] >= 100:
+            lang_statistic["vacancies_found"] = response_page['found']
+            vacancies = []
+            for page in range(response_page['pages']):
                 _payload["page"] = page
                 response = requests.get(HH_URL, params=_payload)
                 response.raise_for_status()
-                lang_vacancies.extend(response.json()['items'])
-            salaries_list = [vacancy['salary'] for vacancy in lang_vacancies if vacancy['salary'] is not None]
-            processed_salaries = list(filter(lambda x: x is not None, map(predict_rub_salary_hh, salaries_list)))
-            lang_salary_statistic["vacancies_processed"] = len(processed_salaries)
-            lang_salary_statistic["average_salary"] = int(sum(processed_salaries)/len(processed_salaries))
-            languages_hh_salary_dict[_language] = lang_salary_statistic
-    return languages_hh_salary_dict
+                vacancies.extend(response.json()['items'])
+            salaries = [vacancy['salary'] for vacancy in vacancies if vacancy['salary']]
+            processed_salaries = [salary for salary in map(predict_rub_salary_hh, salaries) if salary]
+            lang_statistic["vacancies_processed"] = len(processed_salaries)
+            lang_statistic["average_salary"] = int(mean(processed_salaries))
+            vacancies_statistic[_language] = lang_statistic
+    return vacancies_statistic
 
 
 if __name__ == '__main__':
     load_dotenv()
     secret_key = os.getenv('SECRET_KEY')
-    create_table_from_salary_dict(fetch_hh_salary_data(), 'HeadHunter Moscow')
-    create_table_from_salary_dict(fetch_sj_salary_data(), 'SuperJob Moscow')
-
+    print(convert_vacancies_statistic_to_table(fetch_hh_vacancies_statistic(), 'HeadHunter Moscow'), end="\n")
+    print(convert_vacancies_statistic_to_table(fetch_sj_vacancies_statistic(secret_key), 'SuperJob Moscow'))
