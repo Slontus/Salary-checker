@@ -5,7 +5,6 @@ from itertools import count
 from terminaltables import SingleTable
 
 
-load_dotenv()
 HH_URL = "https://api.hh.ru/vacancies"
 SJ_URL = "https://api.superjob.ru/2.0/vacancies/"
 LANGUAGES = ['Typescript', 'Swift', 'Scala', 'Objective-C', 'Go', 'C', 'C#', 'C++', 'PHP', 'Ruby',
